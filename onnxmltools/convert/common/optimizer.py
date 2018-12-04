@@ -23,7 +23,7 @@ class LinkedNode(object):
 
     @property
     def op_type(self):
-        return None if self.origin is None else self.origin.op_type
+        return '' if self.origin is None else self.origin.op_type
 
     @property
     def is_identity(self):
@@ -212,6 +212,23 @@ class MergeSolution(Solution):
         return node_list
 
 
+def _skip_ignore(iterable, succ=True, ignore_list=('add', 'upsample', 'concat', 'identity', 'maxpool')):
+    nodes_to_check = []
+    if succ:
+        for n in iterable.successor:
+            if n.op_type.lower() not in ignore_list:
+                nodes_to_check.append(n)
+            else:
+                nodes_to_check += _skip_ignore(n, succ=succ)
+    else:
+        for n in iterable.precedence:
+            if n.op_type.lower() not in ignore_list:
+                nodes_to_check.append(n)
+            else:
+                nodes_to_check += _skip_ignore(n, succ=succ)
+
+    return nodes_to_check
+
 class RedundantOptimizer(object):
     def __init__(self):
         pass
@@ -237,6 +254,17 @@ class RedundantOptimizer(object):
                     Solution.is_useless_transpose(Solution.get_perm(n_.origin)):
                 solution = Solution(n_.precedence[0], n_, n_, n_.successor[0])
                 return solution
+
+            elif n_.is_transpose and \
+                    (any(s.op_type.lower().count('relu') > 0 for s in _skip_ignore(n_, succ=True))):
+                solution = Solution(n_.precedence[0], n_, n_, n_.successor[0])
+                return solution
+            elif n_.is_transpose and \
+                    any([p.op_type.lower().count('relu') > 0 for p in _skip_ignore(n_, succ=False)]):
+                solution = Solution(n_.precedence[0], n_, n_, n_.successor[0])
+                return solution
+            elif n_.op_type.lower() == 'concat' and n_.origin.attribute[0].i == 3:
+                n_.origin.attribute[0].i = 1
             else:
                 pass
 
